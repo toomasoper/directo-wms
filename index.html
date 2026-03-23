@@ -101,35 +101,33 @@
             const token = document.getElementById('apiToken').value;
             const btn = document.getElementById('testBtn');
             const resDiv = document.getElementById('testResult');
-
-            if (!url || !token) {
-                resDiv.style.color = "red";
-                resDiv.innerText = "Täida mõlemad väljad!";
-                return;
-            }
-
-            btn.innerText = "Kontrollin...";
-            btn.disabled = true;
-
-            const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
-                <directo_api><token>${token}</token><request>ws_artiklid</request><parameter name="code">TEST</parameter></directo_api>`;
-
+        
+            const params = new URLSearchParams();
+            params.append('token', token);
+            params.append('get', '1');
+            params.append('what', 'item');
+            params.append('barcode', 'TEST');
+        
             try {
-                const response = await fetch(url, { method: 'POST', body: xmlBody });
+                btn.innerText = "Kontrollin...";
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params
+                });
                 const text = await response.text();
-                if (text.includes("artikkel") || text.includes("<directo_api>")) {
+                if (text.includes("<?xml")) {
                     resDiv.style.color = "green";
-                    resDiv.innerText = "✅ Ühendus toimib!";
+                    resDiv.innerText = "✅ Ühendus toimib! API vastas XML-iga.";
                 } else {
                     resDiv.style.color = "red";
-                    resDiv.innerText = "❌ Viga vastuses (vale token?)";
+                    resDiv.innerText = "❌ Vigane vastus serverist.";
                 }
             } catch (err) {
                 resDiv.style.color = "red";
                 resDiv.innerText = "❌ Ühenduse viga: " + err.message;
             } finally {
                 btn.innerText = "🔍 Kontrolli ühendust";
-                btn.disabled = false;
             }
         }
 
@@ -146,27 +144,47 @@
             const token = localStorage.getItem('directo_token');
             const detailsDiv = document.getElementById('productDetails');
             detailsDiv.innerHTML = "Pärin andmeid...";
-
-            const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
-                <directo_api><token>${token}</token><request>ws_artiklid</request><parameter name="code">${barcode}</parameter></directo_api>`;
-
+        
+            // Koostame andmed vastavalt sinu curl näitele
+            const params = new URLSearchParams();
+            params.append('token', token);
+            params.append('get', '1');
+            params.append('what', 'item');
+            params.append('barcode', barcode);
+        
             try {
-                const response = await fetch(url, { method: 'POST', body: xmlBody });
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: params
+                });
+        
                 const text = await response.text();
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(text, "text/xml");
-                const art = xmlDoc.getElementsByTagName("artikkel")[0];
+                
+                // Directo tagastab artikli info tavaliselt <item> või <artikkel> elemendis
+                // Kontrolli XML struktuuri, vajadusel muuda siin tag-i nime
+                const art = xmlDoc.getElementsByTagName("artikkel")[0] || xmlDoc.getElementsByTagName("item")[0];
                 
                 if (art) {
-                    document.getElementById('resName').innerText = art.getAttribute('name') || 'Nimetuseta';
-                    document.getElementById('resCode').innerText = "Kood: " + art.getAttribute('code');
+                    document.getElementById('resName').innerText = art.getAttribute('name') || art.getElementsByTagName('name')[0]?.textContent || 'Nimetuseta';
+                    document.getElementById('resCode').innerText = "Kood: " + (art.getAttribute('code') || art.getElementsByTagName('code')[0]?.textContent);
+                    
+                    const stock = art.getAttribute('stock') || art.getElementsByTagName('stock')[0]?.textContent || '0';
+                    const location = art.getAttribute('location') || art.getElementsByTagName('location')[0]?.textContent || '-';
+                    const price = art.getAttribute('price') || art.getElementsByTagName('price')[0]?.textContent || '-';
+        
                     detailsDiv.innerHTML = `
-                        <div class="result-row"><span class="result-label">Laos</span><span class="result-value stock-tag">${art.getAttribute('stock') || 0} tk</span></div>
-                        <div class="result-row"><span class="result-label">Asukoht</span><span class="result-value">${art.getAttribute('location') || '-'}</span></div>
-                        <div class="result-row"><span class="result-label">Hind</span><span class="result-value">${art.getAttribute('price') || '-'} €</span></div>
+                        <div class="result-row"><span class="result-label">Laos</span><span class="result-value stock-tag">${stock} tk</span></div>
+                        <div class="result-row"><span class="result-label">Asukoht</span><span class="result-value">${location}</span></div>
+                        <div class="result-row"><span class="result-label">Hind</span><span class="result-value">${price} €</span></div>
                     `;
                 } else {
-                    detailsDiv.innerHTML = "Toodet ei leitud.";
+                    detailsDiv.innerHTML = "Toodet ei leitud või viga API vastuses.";
+                    console.log("API Vastus:", text); // Debugimiseks konsoolis
                 }
             } catch (err) {
                 detailsDiv.innerHTML = "Viga: " + err.message;
