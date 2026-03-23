@@ -12,10 +12,9 @@
         input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
         button { background: #007bff; color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; font-size: 16px; }
         .secondary { background: #6c757d; margin-bottom: 10px; padding: 8px; font-size: 0.8em; }
-        #status { text-align: center; margin: 10px 0; font-size: 0.9em; min-height: 1.2em; color: #666; }
+        #status { text-align: center; margin: 10px 0; font-size: 0.9em; color: #666; }
         .result-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
         .error-card { background: #fff5f5; border: 1px solid #feb2b2; padding: 15px; border-radius: 8px; margin-top: 10px; color: #c53030; font-size: 0.85em; }
-        .success-badge { background: #e6fffa; color: #2c7a7b; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -23,12 +22,11 @@
     <button onclick="toggleSettings()" class="secondary">⚙️ Seaded</button>
 
     <div id="settings" class="card" style="display:none;">
-        <label>Directo API URL (peab algama https://):</label>
-        <input type="text" id="apiUrl" placeholder="https://login.directo.ee/xmlcore/wmsd/xmlcore.asp">
+        <label>Directo API URL:</label>
+        <input type="text" id="apiUrl" placeholder="https://login.directo.ee/...">
         <label>API Token:</label>
         <input type="password" id="apiToken">
-        <button onclick="saveSettings()" style="background:#28a745">Salvesta seaded</button>
-        <p style="font-size: 0.7em; color: #666; margin-top: 10px;">NB! Kui ikka ei tööta, kontrolli, et URL on täpselt õige.</p>
+        <button onclick="saveSettings()" style="background:#28a745">Salvesta</button>
     </div>
 
     <div id="scanner-container">
@@ -41,7 +39,7 @@
         <div class="card">
             <h3 id="resName" style="margin:0 0 10px 0; color:#007bff;"></h3>
             <div id="productDetails"></div>
-            <button onclick="resetScanner()" style="background:#28a745; margin-top:15px;">UUS SKANEERIMINE</button>
+            <button onclick="location.reload()" style="background:#28a745; margin-top:15px;">UUS SKANEERIMINE</button>
         </div>
     </div>
 
@@ -68,35 +66,39 @@
             const baseUrl = localStorage.getItem('directo_url');
             const token = localStorage.getItem('directo_token');
             
-            // UUS PROXY: corsproxy.io on sageli kiirem ja stabiilsem
-            const proxyPrefix = "https://corsproxy.io/?";
-            const directoUrl = `${baseUrl}?token=${encodeURIComponent(token)}&get=1&what=item&barcode=${encodeURIComponent(barcode)}`;
+            // Kasutame AllOrigins POST vahendajat
+            const proxyUrl = "https://api.allorigins.win/raw?url=";
             
-            const finalUrl = proxyPrefix + encodeURIComponent(directoUrl);
+            // Koostame POST päringu keha (täpselt nagu curl --data-urlencode)
+            const params = new URLSearchParams();
+            params.append('token', token);
+            params.append('get', '1');
+            params.append('what', 'item');
+            params.append('barcode', barcode);
 
             try {
-                const response = await fetch(finalUrl, {
-                    method: 'GET', // Kasutame GET-i, et proxy-st kergemini läbi pääseda
-                    headers: { 'Accept': 'application/xml' }
+                // AllOrigins /raw toetab POST päringuid läbi vahendaja
+                const response = await fetch(proxyUrl + encodeURIComponent(baseUrl), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: params
                 });
 
-                if (!response.ok) throw new Error(`Serveri viga (${response.status})`);
+                if (!response.ok) throw new Error(`Võrgu viga: ${response.status}`);
                 
                 const xmlText = await response.text();
-                if (!xmlText) throw new Error("Server saatis tühja vastuse.");
                 return xmlText;
             } catch (err) {
-                console.error(err);
-                throw new Error("VÕRGU VIGA: Brauser ei saanud Directoga ühendust. Kontrolli internetti või proovi hiljem uuesti.");
+                throw new Error("Päring ebaõnnestus. Kontrolli internetti või API seadeid.");
             }
         }
 
         function initScanner() {
             document.getElementById('startBtn').style.display = 'none';
             document.getElementById('status').innerText = "Käivitan kaamerat...";
-            
             html5QrCode = new Html5Qrcode("reader");
-            
             html5QrCode.start(
                 { facingMode: "environment" }, 
                 { fps: 15, qrbox: { width: 250, height: 200 } },
@@ -104,9 +106,7 @@
                     document.getElementById('beep').play().catch(() => {});
                     html5QrCode.stop().then(() => showResult(barcode));
                 }
-            ).then(() => {
-                document.getElementById('status').innerText = "Skanneeri vöötkood";
-            }).catch(err => {
+            ).catch(() => {
                 document.getElementById('status').innerText = "Kaamera viga.";
                 document.getElementById('startBtn').style.display = 'block';
             });
@@ -116,18 +116,13 @@
             document.getElementById('scanner-container').style.display = 'none';
             document.getElementById('result').style.display = 'block';
             const details = document.getElementById('productDetails');
-            details.innerHTML = "<i>Päring Directosse...</i>";
+            details.innerHTML = "<i>Päring Directosse (POST)...</i>";
 
             try {
                 const xmlText = await fetchDirecto(barcode);
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, "text/xml");
                 
-                // Kontrollime, kas XML on vigane
-                if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
-                    throw new Error("Vigane XML vastus serverist.");
-                }
-
                 const art = xmlDoc.getElementsByTagName("artikkel")[0] || 
                             xmlDoc.getElementsByTagName("item")[0] ||
                             xmlDoc.querySelector("row");
@@ -141,24 +136,15 @@
                     document.getElementById('resName').innerText = name;
                     details.innerHTML = `
                         <div class="result-row"><span>Kood:</span><span>${code}</span></div>
-                        <div class="result-row"><span>Laos:</span><span class="success-badge">${stock} tk</span></div>
+                        <div class="result-row"><span>Laos:</span><span style="font-weight:bold; color:#007bff;">${stock} tk</span></div>
                         <div class="result-row"><span>Asukoht:</span><span>${loc}</span></div>
                     `;
                 } else {
-                    details.innerHTML = `
-                        <div class="error-card">
-                            <b>Toodet ei leitud.</b><br>
-                            Kood: ${barcode}<br><br>
-                            <details><summary>Vaata serveri vastust</summary><pre>${xmlText.substring(0,200)}</pre></details>
-                        </div>`;
+                    details.innerHTML = `<div class="error-card">Toodet ei leitud.<br><small>${xmlText.substring(0,100)}</small></div>`;
                 }
             } catch (e) {
-                details.innerHTML = `<div class="error-card"><b>VIGA:</b> ${e.message}</div>`;
+                details.innerHTML = `<div class="error-card"><b>Viga:</b> ${e.message}</div>`;
             }
-        }
-
-        function resetScanner() {
-            location.reload();
         }
 
         window.onload = initScanner;
