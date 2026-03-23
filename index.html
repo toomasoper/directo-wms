@@ -3,135 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Directo WMS v3</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007bff">
+    <title>Directo Scan v5</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: -apple-system, sans-serif; margin: 0; padding: 15px; background: #f0f2f5; }
-        #reader { width: 100%; border-radius: 12px; background: #000; min-height: 250px; margin-bottom: 10px; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px; }
-        .settings-panel { display: none; margin-bottom: 20px; border: 2px solid #007bff; }
-        input { width: 100%; padding: 12px; margin: 5px 0 15px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        button { background: #007bff; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; margin-top: 5px; }
-        .secondary-btn { background: #6c757d; margin-bottom: 15px; }
-        .result-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f9f9f9; }
-        #status { text-align: center; color: #666; font-size: 0.9em; margin-bottom: 10px; }
-        #error-log { color: red; font-size: 0.8em; margin-top: 10px; text-align: center; }
+        body { font-family: sans-serif; margin: 0; padding: 15px; background: #f4f7f9; }
+        #reader { width: 100%; min-height: 280px; background: #000; border-radius: 12px; overflow: hidden; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 15px; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { background: #007bff; color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; font-size: 16px; margin-top: 10px; }
+        .secondary { background: #6c757d; margin-bottom: 10px; }
+        #status { text-align: center; color: #555; margin: 10px 0; font-weight: bold; }
+        .result-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .stock-val { font-weight: bold; color: #1877f2; }
     </style>
 </head>
 <body>
 
-    <h2 style="text-align:center; color:#007bff;">Directo WMS</h2>
-    
-    <button onclick="toggleSettings()" class="secondary-btn">⚙️ Seaded</button>
+    <button onclick="toggleSettings()" class="secondary">⚙️ Seaded</button>
 
-    <div id="settings" class="settings-panel card">
+    <div id="settings" class="card" style="display:none;">
         <label>Directo API URL:</label>
         <input type="text" id="apiUrl" placeholder="https://login.directo.ee/...">
         <label>API Token:</label>
-        <input type="password" id="apiToken" placeholder="Token">
+        <input type="password" id="apiToken">
         <button onclick="saveSettings()" style="background:#28a745">Salvesta</button>
     </div>
 
-    <div id="reader"></div>
-    <div id="status">Kaamera aktiveerimine...</div>
-    <div id="error-log"></div>
+    <div id="scanner-container">
+        <div id="reader"></div>
+        <div id="status">Vajuta nuppu kaamera jaoks</div>
+        <button id="startBtn" onclick="initScanner()">📷 KÄIVITA SKANNER</button>
+    </div>
 
     <div id="result" class="card" style="display:none;">
-        <h3 id="resName" style="margin:0;"></h3>
-        <div id="productDetails" style="margin-top:15px;"></div>
-        <button onclick="resetScanner()" style="background:#28a745; margin-top: 20px;">Uus skaneerimine</button>
+        <h3 id="resName" style="margin:0 0 10px 0; color:#007bff;"></h3>
+        <div id="productDetails"></div>
+        <button onclick="location.reload()" style="background:#28a745">UUS SKANEERIMINE</button>
     </div>
+
+    <audio id="beep" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3"></audio>
 
     <script>
         let html5QrCode;
 
-        // Lae seaded
         document.getElementById('apiUrl').value = localStorage.getItem('directo_url') || '';
         document.getElementById('apiToken').value = localStorage.getItem('directo_token') || '';
 
         function toggleSettings() {
             const s = document.getElementById('settings');
-            s.style.display = (s.style.display === 'block') ? 'none' : 'block';
+            s.style.display = s.style.display === 'none' ? 'block' : 'none';
         }
 
         function saveSettings() {
             localStorage.setItem('directo_url', document.getElementById('apiUrl').value);
             localStorage.setItem('directo_token', document.getElementById('apiToken').value);
+            alert("Salvestatud!");
             location.reload();
         }
 
-        async function callDirecto(barcode) {
+        async function fetchDirecto(barcode) {
             const baseUrl = localStorage.getItem('directo_url');
             const token = localStorage.getItem('directo_token');
-            const proxy = "https://api.allorigins.win/get?url=";
+            
+            // AllOrigins vahendaja, aga küsime tekstina (Raw), mitte JSON-ina
+            const proxy = "https://api.allorigins.win/raw?url=";
             const directoUrl = `${baseUrl}?token=${encodeURIComponent(token)}&get=1&what=item&barcode=${encodeURIComponent(barcode)}`;
+            
             const response = await fetch(proxy + encodeURIComponent(directoUrl));
-            const data = await response.json();
-            return data.contents;
+            if (!response.ok) throw new Error("Võrgu viga");
+            
+            // Loeme vastust kui teksti (XML), mitte JSON
+            const xmlText = await response.text();
+            return xmlText;
         }
 
-        async function handleScan(barcode) {
-            document.getElementById('reader').style.display = 'none';
+        function initScanner() {
+            document.getElementById('startBtn').style.display = 'none';
+            document.getElementById('status').innerText = "Aktiveerin...";
+            
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                { fps: 10, qrbox: { width: 250, height: 200 } },
+                (barcode) => {
+                    document.getElementById('beep').play(); // Piiks!
+                    html5QrCode.stop().then(() => showResult(barcode));
+                }
+            ).then(() => {
+                document.getElementById('status').innerText = "Skanneeri vöötkood";
+            }).catch(err => {
+                document.getElementById('status').innerText = "Kaamera viga: " + err;
+                document.getElementById('startBtn').style.display = 'block';
+            });
+        }
+
+        async function showResult(barcode) {
+            document.getElementById('scanner-container').style.display = 'none';
             document.getElementById('result').style.display = 'block';
             const details = document.getElementById('productDetails');
-            details.innerHTML = "Otsin toodet...";
+            details.innerHTML = "<i>Otsin Directost...</i>";
 
             try {
-                const xmlText = await callDirecto(barcode);
+                const xmlText = await fetchDirecto(barcode);
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-                const item = xmlDoc.getElementsByTagName("artikkel")[0] || xmlDoc.getElementsByTagName("item")[0];
+                
+                // Directo XML parsimine vastavalt su kirjeldusele
+                // Proovime leida artiklit mitmel viisil (atribuut vs element)
+                const art = xmlDoc.getElementsByTagName("artikkel")[0] || xmlDoc.getElementsByTagName("item")[0];
 
-                if (item) {
-                    document.getElementById('resName').innerText = item.getAttribute('name') || "Nimetus puudub";
+                if (art) {
+                    const name = art.getAttribute('name') || art.getAttribute('nimetus') || "Toode leitud";
+                    const code = art.getAttribute('code') || barcode;
+                    const stock = art.getAttribute('stock') || "0";
+                    const loc = art.getAttribute('location') || "-";
+
+                    document.getElementById('resName').innerText = name;
                     details.innerHTML = `
-                        <div class="result-row"><span>Kood</span><span>${item.getAttribute('code')}</span></div>
-                        <div class="result-row"><span>Laos</span><span><b>${item.getAttribute('stock') || 0}</b></span></div>
-                        <div class="result-row"><span>Asukoht</span><span>${item.getAttribute('location') || '-'}</span></div>
+                        <div class="result-row"><span>Kood:</span><span>${code}</span></div>
+                        <div class="result-row"><span>Laos:</span><span class="stock-val">${stock} tk</span></div>
+                        <div class="result-row"><span>Asukoht:</span><span>${loc}</span></div>
                     `;
                 } else {
-                    details.innerHTML = "Toodet ei leitud.";
+                    details.innerHTML = "Toodet ei leitud.<br><small>Vastus: " + xmlText.substring(0, 100) + "...</small>";
                 }
             } catch (e) {
                 details.innerHTML = "Viga: " + e.message;
             }
         }
-
-        function startScanner() {
-            const config = { fps: 10, qrbox: { width: 250, height: 200 } };
-            html5QrCode = new Html5Qrcode("reader");
-            
-            html5QrCode.start(
-                { facingMode: "environment" }, 
-                config,
-                (text) => {
-                    html5QrCode.stop().then(() => handleScan(text));
-                },
-                (err) => {
-                    // Ignoreerime tavalised "raami" vead
-                }
-            ).then(() => {
-                document.getElementById('status').innerText = "Skaneeri vöötkood";
-            }).catch(err => {
-                document.getElementById('error-log').innerText = "Kaamera viga: " + err;
-                document.getElementById('status').innerText = "Viga kaamera käivitamisel.";
-            });
-        }
-
-        function resetScanner() {
-            location.reload(); // Lihtsaim viis kaamera ja UI lähtestamiseks
-        }
-
-        // Kontrolli õigusi ja käivita
-        window.onload = () => {
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                startScanner();
-            } else {
-                document.getElementById('error-log').innerText = "Sinu brauser ei toeta kaamerat või HTTPS puudub.";
-            }
-        };
     </script>
 </body>
 </html>
