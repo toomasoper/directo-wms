@@ -3,83 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Directo Scanner</title>
+    <title>Directo WMS Scanner</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#007bff">
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 15px; background: #f4f4f9; }
-        #reader { width: 100%; border-radius: 10px; overflow: hidden; }
-        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 15px; }
-        .settings-panel { display: none; margin-bottom: 20px; }
-        input { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
-        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
-        .result-item { border-bottom: 1px solid #eee; padding: 8px 0; }
-        .result-label { font-weight: bold; font-size: 0.8em; color: #666; }
+        body { font-family: -apple-system, sans-serif; margin: 0; padding: 15px; background: #f0f2f5; color: #1c1e21; }
+        h2 { text-align: center; color: #007bff; margin-bottom: 20px; }
+        #reader { width: 100%; border-radius: 12px; overflow: hidden; background: black; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-top: 20px; }
+        .settings-panel { display: none; margin-bottom: 20px; border: 2px solid #007bff; }
+        label { display: block; margin-top: 10px; font-size: 0.9em; font-weight: bold; color: #444; }
+        input { width: 100%; padding: 12px; margin: 5px 0 15px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { background: #007bff; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; transition: background 0.2s; }
+        button:active { background: #0056b3; }
+        .secondary-btn { background: #6c757d; margin-top: 0; margin-bottom: 15px; }
+        .result-header { border-bottom: 2px solid #f0f2f5; padding-bottom: 10px; margin-bottom: 15px; }
+        .result-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f9f9f9; }
+        .result-label { color: #65676b; font-size: 0.9em; }
+        .result-value { font-weight: 600; text-align: right; }
+        .stock-tag { background: #e7f3ff; color: #1877f2; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+        #status { text-align: center; margin-top: 10px; font-size: 0.9em; color: #666; }
     </style>
 </head>
 <body>
 
-    <h2>Directo Vöötkood</h2>
+    <h2>Directo WMS</h2>
     
-    <button onclick="toggleSettings()" id="settingsBtn">⚙️ Seaded</button>
+    <button onclick="toggleSettings()" class="secondary-btn" id="settingsBtn">⚙️ Seadista API ühendus</button>
 
     <div id="settings" class="settings-panel card">
-        <h3>Seadistused</h3>
-        <label>API URL:</label>
-        <input type="text" id="apiUrl" placeholder="https://login.directo.ee/xmlcore/...">
+        <h3>API Seaded</h3>
+        <label>Directo API URL:</label>
+        <input type="text" id="apiUrl" placeholder="https://login.directo.ee/xmlcore/vmsd/...">
         <label>API Token:</label>
-        <input type="password" id="apiToken" placeholder="Sinu API võti">
-        <button onclick="saveSettings()">Salvesta ja Sule</button>
+        <input type="password" id="apiToken" placeholder="Sisesta token">
+        <button onclick="saveSettings()">Salvesta Seaded</button>
     </div>
 
     <div id="reader"></div>
+    <div id="status">Ootan vöötkoodi...</div>
 
     <div id="result" class="card" style="display:none;">
-        <h3>Toote info</h3>
-        <div id="productData"></div>
-        <button onclick="resetScanner()" style="background:#28a745">Skaneeri uuesti</button>
+        <div class="result-header">
+            <h3 style="margin:0" id="resName">Toote nimi</h3>
+            <small id="resCode" style="color:#888"></small>
+        </div>
+        
+        <div id="productDetails">
+            </div>
+
+        <button onclick="resetScanner()" style="background:#28a745; margin-top: 20px;">Loe järgmine kood</button>
     </div>
 
     <script>
         let html5QrCode;
 
-        // Lae seaded alguses
+        // Lae seaded kohe lehe avamisel
         document.getElementById('apiUrl').value = localStorage.getItem('directo_url') || '';
         document.getElementById('apiToken').value = localStorage.getItem('directo_token') || '';
 
         function toggleSettings() {
             const s = document.getElementById('settings');
-            s.style.display = s.style.display === 'block' ? 'none' : 'block';
+            s.style.display = (s.style.display === 'block') ? 'none' : 'block';
         }
 
         function saveSettings() {
             localStorage.setItem('directo_url', document.getElementById('apiUrl').value);
             localStorage.setItem('directo_token', document.getElementById('apiToken').value);
             toggleSettings();
-            alert("Seaded salvestatud!");
+            alert("Seaded on salvestatud!");
         }
 
         function onScanSuccess(decodedText) {
             html5QrCode.stop();
             document.getElementById('reader').style.display = 'none';
+            document.getElementById('status').style.display = 'none';
             document.getElementById('result').style.display = 'block';
             fetchDirectoData(decodedText);
         }
 
         async function fetchDirectoData(barcode) {
             const url = localStorage.getItem('directo_url');
-            const token = localStorage.getItem('directo_token');
-            const display = document.getElementById('productData');
+            const token = localStorage.getItem('apiToken'); // Muudetud tokeni võti vastavaks
+            const detailsDiv = document.getElementById('productDetails');
             
-            display.innerHTML = "Pärin andmeid (" + barcode + ")...";
+            detailsDiv.innerHTML = "<p>Pärin andmeid Directost...</p>";
 
             if (!url || !token) {
-                display.innerHTML = "<span style='color:red'>Viga: Seadista URL ja Token!</span>";
+                detailsDiv.innerHTML = "<b style='color:red'>Viga: API URL või Token on puudu!</b>";
                 return;
             }
 
-            // XML päringu koostamine vastavalt Directo spetsifikatsioonile
+            // Directo XML Päringu keha
             const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>
                 <directo_api>
                     <token>${token}</token>
@@ -98,43 +114,60 @@
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(text, "text/xml");
                 
-                // Siin parsitakse vastus vastavalt ws_artiklid.xsd struktuurile
-                // Näidis: võtame artikli nime ja koodi
                 const artikkel = xmlDoc.getElementsByTagName("artikkel")[0];
                 
                 if (artikkel) {
-                    display.innerHTML = `
-                        <div class="result-item"><div class="result-label">Kood</div>${artikkel.getAttribute('code') || '-'}</div>
-                        <div class="result-item"><div class="result-label">Nimetus</div>${artikkel.getAttribute('name') || '-'}</div>
-                        <div class="result-item"><div class="result-label">Hind</div>${artikkel.getAttribute('price') || '-'}</div>
+                    document.getElementById('resName').innerText = artikkel.getAttribute('name') || 'Nimetus puudub';
+                    document.getElementById('resCode').innerText = "Artikli kood: " + (artikkel.getAttribute('code') || '-');
+                    
+                    // Võtame laoseisu ja asukoha (Directo väljundis tihti atribuudid või alam-elemendid)
+                    const stock = artikkel.getAttribute('stock') || '0';
+                    const location = artikkel.getAttribute('location') || 'Määramata';
+                    const price = artikkel.getAttribute('price') || '-';
+
+                    detailsDiv.innerHTML = `
+                        <div class="result-row">
+                            <span class="result-label">Laoseis kokku</span>
+                            <span class="result-value stock-tag">${stock} tk</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Peamine asukoht</span>
+                            <span class="result-value">${location}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Müügihind</span>
+                            <span class="result-value">${price} €</span>
+                        </div>
                     `;
                 } else {
-                    display.innerHTML = "Toodet ei leitud.";
+                    detailsDiv.innerHTML = "<p>Toodet koodiga <b>" + barcode + "</b> ei leitud.</p>";
                 }
             } catch (err) {
-                display.innerHTML = "API viga: " + err.message;
+                detailsDiv.innerHTML = "<p style='color:red'>Võrgu viga: " + err.message + "</p>";
             }
         }
 
         function resetScanner() {
             document.getElementById('result').style.display = 'none';
             document.getElementById('reader').style.display = 'block';
+            document.getElementById('status').style.display = 'block';
             startScanner();
         }
 
         function startScanner() {
             html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start(
-                { facingMode: "environment" }, 
-                { fps: 10, qrbox: { width: 250, height: 150 } },
-                onScanSuccess
-            );
+            const config = { fps: 15, qrbox: { width: 280, height: 180 } };
+            
+            html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
+                .catch(err => {
+                    document.getElementById('status').innerText = "Kaamera viga: " + err;
+                });
         }
 
-        // Käivita skanner kohe
-        startScanner();
+        // Käivita kohe
+        window.onload = startScanner;
 
-        // Registreeri Service Worker PWA jaoks
+        // PWA Service Worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js');
         }
