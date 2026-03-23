@@ -82,6 +82,11 @@
 
         // --- PÄRINGU LOOGIKA (Simuleerib sinu CURLi) ---
         async function callDirecto(barcode) {
+            const directUrl = localStorage.getItem('directo_url');
+            const proxyUrl = "https://cors-anywhere.herokuapp.com/"; 
+            const finalUrl = proxyUrl + directUrl;
+
+            const token = localStorage.getItem('directo_token');
             const url = localStorage.getItem('directo_url');
             const token = localStorage.getItem('directo_token');
 
@@ -91,7 +96,7 @@
             params.append('what', 'item');
             params.append('barcode', barcode);
 
-            const response = await fetch(url, {
+            const response = await fetch(finalUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: params
