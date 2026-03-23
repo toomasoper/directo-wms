@@ -51,4 +51,87 @@
         document.getElementById('apiUrl').value = localStorage.getItem('directo_url') || '';
         document.getElementById('apiToken').value = localStorage.getItem('directo_token') || '';
 
-        function toggle
+        function toggleSettings() {
+            const s = document.getElementById('settings');
+            s.style.display = (s.style.display === 'block') ? 'none' : 'block';
+        }
+
+        function saveSettings() {
+            localStorage.setItem('directo_url', document.getElementById('apiUrl').value);
+            localStorage.setItem('directo_token', document.getElementById('apiToken').value);
+            location.reload();
+        }
+
+        async function callDirecto(barcode) {
+            const baseUrl = localStorage.getItem('directo_url');
+            const token = localStorage.getItem('directo_token');
+            const proxy = "https://api.allorigins.win/get?url=";
+            const directoUrl = `${baseUrl}?token=${encodeURIComponent(token)}&get=1&what=item&barcode=${encodeURIComponent(barcode)}`;
+            const response = await fetch(proxy + encodeURIComponent(directoUrl));
+            const data = await response.json();
+            return data.contents;
+        }
+
+        async function handleScan(barcode) {
+            document.getElementById('reader').style.display = 'none';
+            document.getElementById('result').style.display = 'block';
+            const details = document.getElementById('productDetails');
+            details.innerHTML = "Otsin toodet...";
+
+            try {
+                const xmlText = await callDirecto(barcode);
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+                const item = xmlDoc.getElementsByTagName("artikkel")[0] || xmlDoc.getElementsByTagName("item")[0];
+
+                if (item) {
+                    document.getElementById('resName').innerText = item.getAttribute('name') || "Nimetus puudub";
+                    details.innerHTML = `
+                        <div class="result-row"><span>Kood</span><span>${item.getAttribute('code')}</span></div>
+                        <div class="result-row"><span>Laos</span><span><b>${item.getAttribute('stock') || 0}</b></span></div>
+                        <div class="result-row"><span>Asukoht</span><span>${item.getAttribute('location') || '-'}</span></div>
+                    `;
+                } else {
+                    details.innerHTML = "Toodet ei leitud.";
+                }
+            } catch (e) {
+                details.innerHTML = "Viga: " + e.message;
+            }
+        }
+
+        function startScanner() {
+            const config = { fps: 10, qrbox: { width: 250, height: 200 } };
+            html5QrCode = new Html5Qrcode("reader");
+            
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                config,
+                (text) => {
+                    html5QrCode.stop().then(() => handleScan(text));
+                },
+                (err) => {
+                    // Ignoreerime tavalised "raami" vead
+                }
+            ).then(() => {
+                document.getElementById('status').innerText = "Skaneeri vöötkood";
+            }).catch(err => {
+                document.getElementById('error-log').innerText = "Kaamera viga: " + err;
+                document.getElementById('status').innerText = "Viga kaamera käivitamisel.";
+            });
+        }
+
+        function resetScanner() {
+            location.reload(); // Lihtsaim viis kaamera ja UI lähtestamiseks
+        }
+
+        // Kontrolli õigusi ja käivita
+        window.onload = () => {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                startScanner();
+            } else {
+                document.getElementById('error-log').innerText = "Sinu brauser ei toeta kaamerat või HTTPS puudub.";
+            }
+        };
+    </script>
+</body>
+</html>
