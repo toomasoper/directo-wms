@@ -62,19 +62,35 @@
         }
 
         async function fetchDirecto(barcode) {
-            const baseUrl = localStorage.getItem('directo_url');
+            const url = localStorage.getItem('directo_url');
             const token = localStorage.getItem('directo_token');
             
-            // AllOrigins vahendaja, aga küsime tekstina (Raw), mitte JSON-ina
-            const proxy = "https://api.allorigins.win/raw?url=";
-            const directoUrl = `${baseUrl}?token=${encodeURIComponent(token)}&get=1&what=item&barcode=${encodeURIComponent(barcode)}`;
+            const formData = new URLSearchParams();
+                formData.append('token', token);
+                formData.append('get', '1');
+                formData.append('what', 'item');
+                formData.append('barcode', barcode);
             
-            const response = await fetch(proxy + encodeURIComponent(directoUrl));
-            if (!response.ok) throw new Error("Võrgu viga");
+                try {
+                    // 2. Teeme päringu Fetchiga
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: formData
+                    });
             
-            // Loeme vastust kui teksti (XML), mitte JSON
-            const xmlText = await response.text();
-            return xmlText;
+                    // 3. Kuna Directo vastab XML-iga, loeme vastust tekstina
+                    const xmlText = await response.text();
+                    
+                    // Siin saad nüüd XML-i edasi parsida (DOMParseriga)
+                    return xmlText;
+                    
+                } catch (error) {
+                    console.error('Päring ebaõnnestus:', error);
+                }
+            
         }
 
         function initScanner() {
