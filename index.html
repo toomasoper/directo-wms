@@ -66,8 +66,6 @@
             const baseUrl = localStorage.getItem('directo_url');
             const token = localStorage.getItem('directo_token');
             
-            // Kasutame AllOrigins POST vahendajat
-            const proxyUrl = "https://api.allorigins.win/raw?url=";
             
             // Koostame POST päringu keha (täpselt nagu curl --data-urlencode)
             const params = new URLSearchParams();
@@ -78,7 +76,7 @@
 
             try {
                 // AllOrigins /raw toetab POST päringuid läbi vahendaja
-                const response = await fetch(proxyUrl + encodeURIComponent(baseUrl), {
+                const response = await fetch(baseUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
@@ -89,6 +87,7 @@
                 if (!response.ok) throw new Error(`Võrgu viga: ${response.status}`);
                 
                 const xmlText = await response.text();
+                console.log(result)
                 return xmlText;
             } catch (err) {
                 throw new Error("Päring ebaõnnestus. Kontrolli internetti või API seadeid.");
